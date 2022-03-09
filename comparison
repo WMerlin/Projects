@@ -1,0 +1,429 @@
+library(microbenchmark)
+library(magrittr)
+library(dplyr)
+library(data.table)
+library(dtplyr)
+  Tags <- read.csv("../R/travel_stackexchange_com/Tags.csv.gz")
+  head(Tags)
+TagsDT<-as.data.table(Tags)
+  Badges <- read.csv("../R/travel_stackexchange_com/Badges.csv.gz")
+BadgesDT<-as.data.table(Badges)
+  Comments <- read.csv("../R/travel_stackexchange_com/Comments.csv.gz")
+CommentsDT<-as.data.table(Comments)
+  PostLinks <- read.csv("../R/travel_stackexchange_com/PostLinks.csv.gz")
+PostLinksDT<-as.data.table(PostLinks)
+  Posts <- read.csv("../R/travel_stackexchange_com/Posts.csv.gz")
+PostsDT<-as.data.table(Posts)
+  Users <- read.csv("../R/travel_stackexchange_com/Users.csv.gz")
+UsersDT<-as.data.table(Users)
+  Votes <- read.csv("../R/travel_stackexchange_com/Votes.csv.gz")
+VotesDT<-as.data.table(Votes)
+
+##1
+## @knitr sql1
+df_sql_1<-function(Tags){
+  df_sql_1res<-sqldf:: sqldf("SELECT TagName, Count
+                FROM Tags
+                ORDER BY Count DESC
+                LIMIT 10")
+}
+df_sql_1kon<-df_sql_1(Tags)
+
+## @knitr base1
+df_base_1<-function(Tags){
+  df_base_1<-as.data.frame(Tags[c('TagName','Count')])
+  ord<-order(df_base_1['Count'],decreasing = TRUE)
+  df_base_1res <- df_base_1[ord[1:10],]
+  row.names(df_base_1res)<-NULL
+  return(df_base_1res)
+}
+df_base_1kon<-df_base_1(Tags)
+
+## @knitr dplyr1
+df_dplyr_1<-function(Tags){
+  df_dplyr_1<-dplyr::select(Tags,'TagName','Count')
+  df_dplyr_1<-dplyr::arrange(df_dplyr_1,desc(Count))
+  df_dplyr_1res<-dplyr::slice(df_dplyr_1,1:10)
+}
+df_dplyr_1kon<-df_dplyr_1(Tags)
+
+## @knitr data.table1
+df_table_1<-function(TagsDT){
+  dt_1<-TagsDT[,.(TagName, Count)]
+  dt_1<-setorder(dt_1,-Count,TagName)
+  df_table_1res<-dt_1[1:10,]
+}
+df_table_1kon<-df_table_1(TagsDT)
+
+dplyr::all_equal(df_base_1kon,df_table_1kon)
+dplyr::all_equal(df_sql_1kon,df_dplyr_1kon)
+dplyr::all_equal(df_sql_1kon,df_base_1kon)
+
+
+microbenchmark::microbenchmark(
+  sqldf = df_sql_1(Tags),
+  base = df_base_1(Tags),
+  dplyr = df_dplyr_1(Tags),
+  data.table = df_table_1(TagsDT)
+)
+
+##2
+## @knitr sql2
+df_sql_2<-function(Posts,Users){
+df_sql_2res<-sqldf:: sqldf("SELECT Users.DisplayName, Users.Age, Users.Location,
+AVG(Posts.Score) as PostsMeanScore,
+MAX(Posts.CreationDate) AS LastPostCreationDate
+FROM Posts
+JOIN Users ON Users.AccountId=Posts.OwnerUserId
+WHERE OwnerUserId != -1
+GROUP BY OwnerUserId
+ORDER BY PostsMeanScore DESC
+LIMIT 10")
+}
+df_sql_2kon<-df_sql_2(Posts,Users)
+
+## @knitr data.table2
+df_table_2 <- function(PostsDT,UsersDT) {
+  dt_2.1 <- PostsDT[,.(PostsMeanScore=mean(Score)),OwnerUserId]
+  dt_2.2 <- PostsDT[,.(LastPostCreationDate=max(CreationDate)),OwnerUserId]
+  dt_2res<-dt_2.1[dt_2.2,on=.(OwnerUserId)]
+  dt_2res<-dt_2res[UsersDT,on=.(OwnerUserId=AccountId)]
+  dt_2res<-dt_2res[OwnerUserId!=-1,]
+  dt_2res <- dt_2res[, .(DisplayName, Age, Location, PostsMeanScore, LastPostCreationDate)]
+  dt_2res <-res <- dt_2res[order(-PostsMeanScore)]
+  dt_2res <- dt_2res[1:10,]
+  dt_2res
+}
+df_table_2kon<-df_table_2(PostsDT,UsersDT)
+
+## @knitr base2
+df_base_2<-function(Posts,Users){
+  df_2<-merge(Posts,Users,all=FALSE,by.y="AccountId",by.x="OwnerUserId")
+  df_2<-df_2[df_2$OwnerUserId!=-1,]
+  df_2<-df_2[,c("OwnerUserId","CreationDate.x","Score","Age","DisplayName","Location")]
+  df_2z1<-aggregate(df_2$Score,df_2[c('OwnerUserId')],mean)
+  df_2z2<-aggregate(df_2$CreationDate.x,df_2[c('OwnerUserId')],max)
+  df_2res<-merge(df_2z1,df_2z2,all=FALSE,by='OwnerUserId')
+  df_2res<-merge(df_2res,df_2,'x.y'='CreationDate.x')
+  df_2res<-df_2res[c('DisplayName','x.x','x.y','Age','Location')]
+  names(df_2res)[names(df_2res)=='x.x']<-'PostsMeanScore'
+  names(df_2res)[names(df_2res)=='x.y']<-'LastPostCreationDate'
+  df_2res<-unique(df_2res)
+  ind2<-order(df_2res['PostsMeanScore'],decreasing=TRUE)
+  df_2res<-df_2res[ind2[1:10],]
+  df_2res<-df_2res[c('DisplayName','Age','Location','PostsMeanScore','LastPostCreationDate')]
+  row.names(df_2res)<-NULL
+  return(df_2res)
+}
+df_base_2kon<-df_base_2(Posts,Users)
+
+## @knitr dplyr2
+df_dplyr_2<-function(Posts,Users){
+  dplyr21=Posts %>%
+    group_by(OwnerUserId) %>%
+    summarise(LastPostCreationDate=max(CreationDate))
+  dplyr22=Posts %>%
+    group_by(OwnerUserId) %>%
+    summarise(PostsMeanScore=mean(Score))
+  dplyr_posts2<-inner_join(dplyr21,dplyr22,by="OwnerUserId") %>%
+    filter(OwnerUserId!=-1)
+  Users2 = Users %>%
+    select(DisplayName,Age,Location,AccountId)
+  df_dplyr_2res<-inner_join(dplyr_posts2,Users2,by=c('OwnerUserId'='AccountId')) %>%
+    select(DisplayName,Age,Location,PostsMeanScore,LastPostCreationDate) %>% 
+    arrange(desc(PostsMeanScore)) %>%
+    slice(1:10)
+}
+df_dplyr_2kon<-df_dplyr_2(Posts,Users)
+
+microbenchmark::microbenchmark(
+  sqldf = df_sql_2(Posts,Users),
+  base = df_base_2(Posts,Users),
+  dplyr = df_dplyr_2(Posts,Users),
+  data.table = df_table_2(PostsDT,UsersDT)
+)
+
+dplyr::all_equal(df_sql_2kon,df_dplyr_2kon)
+dplyr::all_equal(df_sql_2kon,df_table_2kon)
+dplyr::all_equal(df_sql_2kon,df_base_2kon)
+
+##3
+## @knitr sql3
+df_sql_3<-function(Posts,Users){
+  df_sql_3res<-sqldf::sqldf("SELECT DisplayName, QuestionsNumber, AnswersNumber
+  FROM
+  (
+    SELECT COUNT(*) as AnswersNumber, Users.DisplayName, Users.Id
+    FROM Users JOIN Posts ON Users.Id = Posts.OwnerUserId
+    WHERE Posts.PostTypeId = 1
+    GROUP BY Users.Id
+  ) AS Tab1
+  JOIN
+  (
+    SELECT COUNT(*) as QuestionsNumber, Users.Id
+    FROM Users JOIN Posts ON Users.Id = Posts.OwnerUserId
+    WHERE Posts.PostTypeId = 2
+    GROUP BY Users.Id
+  ) AS Tab2
+  ON Tab1.Id = Tab2.Id
+  WHERE QuestionsNumber < AnswersNumber
+  ORDER BY AnswersNumber DESC")
+  return(df_sql_3res)
+}
+df_sql_3kon<-df_sql_3(Posts,Users)
+
+## @knitr data.table3
+df_table_3<-function(PostsDT,UsersDT){
+  tab_dt_3.1<-UsersDT[PostsDT,on=.(Id=OwnerUserId)]
+  tab_dt_3.1<-tab_dt_3.1[PostTypeId==1,]
+  tab_dt_3.3<-tab_dt_3.1[,.(AnswersNumber=length(DisplayName)),by=Id]
+  tab_dt_3.1<-tab_dt_3.1[tab_dt_3.3,on=.(Id)]
+  tab_dt_3.1<-tab_dt_3.1[,.(AnswersNumber,DisplayName,Id)]
+  tab_dt_3.1<-unique(tab_dt_3.1)
+  tab_dt_3.2<-UsersDT[PostsDT,on=.(Id=OwnerUserId)]
+  tab_dt_3.2<-tab_dt_3.2[PostTypeId==2,]
+  tab_dt_3.4<-tab_dt_3.2[,.(QuestionsNumber=length(DisplayName)), by=Id]
+  tab_dt_3.2<-tab_dt_3.2[tab_dt_3.4,on=.(Id)]
+  tab_dt_3.2<-tab_dt_3.2[,.(Id,QuestionsNumber)]
+  tab_dt_3.2<-unique(tab_dt_3.2)
+  tab_dt_3res<-tab_dt_3.1[tab_dt_3.2,on=.(Id)][QuestionsNumber<AnswersNumber
+                                               ][,.(DisplayName, QuestionsNumber, AnswersNumber)]
+  tab_dt_3res<-unique(setorder(tab_dt_3res,-AnswersNumber))
+  return(tab_dt_3res)
+}
+df_table_3kon<-df_table_3(PostsDT,UsersDT)
+
+## @knitr dplyr3 
+df_dplyr_3<-function(Posts,Users){
+  Tab1<-left_join(Users,Posts,c('Id'='OwnerUserId'))%>%
+    filter(PostTypeId==1,)%>%
+    group_by(Id)%>%
+    count(Id)%>%
+    rename(AnswersNumber=n)
+  Tab1<-inner_join(Users,Tab1,'Id')%>%
+    select(AnswersNumber,DisplayName,Id)
+  Tab2<-left_join(Users,Posts,c('Id'='OwnerUserId'))%>%
+    filter(PostTypeId==2,)%>%
+    group_by(Id)%>%
+    count(Id)%>%
+    rename(QuestionsNumber=n)
+  Tab2<-inner_join(Users,Tab2,'Id')%>%
+    select(QuestionsNumber,Id)
+  df_dplyr_res3<-inner_join(Tab1,Tab2,'Id')%>%
+    filter(QuestionsNumber<AnswersNumber)%>%
+    #order
+    arrange(desc(AnswersNumber))%>%
+    select(DisplayName, QuestionsNumber, AnswersNumber)
+  return(df_dplyr_res3)
+}
+df_dplyr_3kon<-df_dplyr_3(Posts,Users)
+
+## @knitr base3
+df_base_3<-function(Posts,Users){
+  tab_1<-merge(Users,Posts,all=FALSE,by.x='Id',by.y='OwnerUserId')
+  tab_1<-tab_1[tab_1$PostTypeId==1,]
+  tab1<-table(tab_1$Id)
+  tab1<-as.data.frame(tab1,stringAsfactor=FALSE,responseName ='AnswersNumber')
+  tab_1<-merge(tab_1[c('Id','DisplayName')],tab1,all=FALSE,by.x='Id',by.y='Var1')
+  tab_1<-unique(tab_1)
+  tab_2<-merge(Users,Posts,all=FALSE,by.x='Id',by.y='OwnerUserId')
+  tab_2<-tab_2[tab_2$PostTypeId==2,]
+  tab2<-table(tab_2$Id)
+  tab2<-as.data.frame(tab2,stringAsfactor=FALSE,responseName ='QuestionsNumber')
+  tab_2<-merge(tab_2[c('Id','DisplayName')],tab2,all=FALSE,by.x='Id',by.y='Var1')
+  tab_2<-unique(tab_2)
+  df_base_3<-merge(tab_1,tab_2,all=FALSE,by=c('Id','DisplayName'))
+  df_base_3<-df_base_3[df_base_3$AnswersNumber>df_base_3$QuestionsNumber,]
+  ind3<-order(df_base_3['AnswersNumber'],decreasing=TRUE)
+  df_base_3<-df_base_3[ind3,]
+  df_base_res3<-df_base_3[c('DisplayName', 'QuestionsNumber', 'AnswersNumber')]
+  row.names(df_base_res3)<-NULL
+  return(df_base_res3)
+}
+df_base_3kon<-df_base_3(Posts,Users)
+
+microbenchmark::microbenchmark(
+  sqldf = df_sql_3(Posts,Users),
+  base = df_base_3(Posts,Users),
+  dplyr = df_dplyr_3(Posts,Users),
+  data.table = df_table_3(PostsDT,UsersDT)
+)
+
+dplyr::all_equal(df_sql_3kon, df_dplyr_3kon)
+dplyr::all_equal(df_sql_3kon, df_base_3kon)
+dplyr::all_equal(df_sql_3kon, df_table_3kon)
+
+##4
+## @knitr sql4
+df_sql_4<-function(Posts,Comments){
+  df_sql_4res<-sqldf::sqldf(
+  "SELECT
+  Posts.Title, 
+  Posts.CommentCount,
+  CmtTotScr.CommentsTotalScore,
+  Posts.ViewCount
+  FROM (
+    SELECT PostID, UserID,SUM(Score) AS CommentsTotalScore
+    FROM Comments
+    GROUP BY PostID, UserID
+  ) AS CmtTotScr
+  JOIN Posts ON Posts.ID=CmtTotScr.PostID
+  WHERE Posts.PostTypeId=1
+  ORDER BY CmtTotScr.CommentsTotalScore DESC
+  LIMIT 10")
+}
+df_sql_4kon<-df_sql_4(Posts,Comments)
+
+## @knitr data.table4
+df_table_4<-function(PostsDT,CommentsDT){
+  dt_4<-CommentsDT[,.(PostId,UserId,Score)]
+  CmtTotScr_dt<-dt_4[,.(CommentsTotalScore=sum(Score)),.(PostId,UserId)]
+  CmtTotScr_dt<-CmtTotScr_dt[order(PostId,UserId)]
+  dt_4res<-CmtTotScr_dt[PostsDT,on=.(PostId=Id)]
+  dt_4res<-dt_4res[PostTypeId==1]
+  dt_4res<-dt_4res[,.(Title,CommentCount,CommentsTotalScore,ViewCount)]
+  dt_4res<-dt_4res[order(-CommentsTotalScore)]
+  dt_4res<-dt_4res[1:10,]
+}
+df_table_4kon<-df_table_4(PostsDT,CommentsDT)
+
+## @knitr base4
+df_base_4<-function(Posts,Comments){
+  posts4<-Posts[Posts$PostTypeId==1,]
+  sum<-aggregate(Comments$Score,Comments[c('PostId','UserId')],sum)
+  names(sum)[names(sum)=='x']<-'CommentsTotalScore'
+  df_4<-unique(merge(posts4,sum,all=FALSE,by.x='Id',by.y='PostId'))
+  df_4<-df_4[c('Title','CommentCount','CommentsTotalScore','ViewCount')]
+  ind4<-order(df_4['CommentsTotalScore'],decreasing=TRUE)
+  df_4<-df_4[ind4[1:10],]
+  row.names(T)<-NULL
+  df_4
+}
+df_base_4kon<-df_base_4(Posts,Comments)
+
+## @knitr dplyr4
+df_dplyr_4<-function(Posts,Comments){
+  CmtTotScr = Comments %>%
+    select(PostId,UserId,Score)%>%
+    group_by(UserId,PostId)%>%
+    summarise(CommentsTotalScore=sum(Score),.groups='drop')
+  dplyr_res4 <-left_join(Posts,CmtTotScr,by=c('Id'='PostId'))%>%
+    filter(PostTypeId==1)%>%
+    arrange(desc(CommentsTotalScore))%>%
+    slice(1:10)%>%
+    select(Title,CommentCount,CommentsTotalScore,ViewCount)
+}
+df_dplyr_4kon<-df_dplyr_4(Posts,Comments)
+
+microbenchmark::microbenchmark(
+  sqldf = df_sql_4(Posts,Comments),
+  base = df_base_4(Posts,Comments),
+  dplyr = df_dplyr_4(Posts,Comments),
+  data.table = df_table_4(PostsDT,CommentsDT)
+)
+
+dplyr::all_equal(df_sql_4kon, df_dplyr_4kon)
+dplyr::all_equal(df_sql_4kon, df_table_4kon)
+dplyr::all_equal(df_sql_4kon, df_table_4kon)
+
+
+
+
+
+#5
+## @knitr sql4
+df_sql_5<-function(Posts){
+  df_sql_5res<-sqldf::sqldf(
+  "SELECT
+  Questions.Id,
+  Questions.Title,
+  BestAnswers.MaxScore,
+  Posts.Score AS AcceptedScore,
+  BestAnswers.MaxScore-Posts.Score AS Difference
+  FROM (
+    SELECT Id, ParentId, MAX(Score) AS MaxScore
+    FROM Posts
+    WHERE PostTypeId==2
+    GROUP BY ParentId
+  ) AS BestAnswers
+  JOIN (
+    SELECT * FROM Posts
+    WHERE PostTypeId==1
+  ) AS Questions
+  ON Questions.Id=BestAnswers.ParentId
+  JOIN Posts ON Questions.AcceptedAnswerId=Posts.Id
+  ORDER BY Difference DESC
+  LIMIT 10")
+}
+df_sql_5kon<-df_sql_5(Posts)
+
+## @knitr data.table5
+df_table_5<-function(PostsDT){
+  BestAnswersDT<-PostsDT[PostTypeId==2,]
+  BestAnswersDT <- BestAnswersDT[,.(MaxScore=max(Score)),.(ParentId)]
+  QuestionsDT<-PostsDT[PostTypeId==1,]
+  dt_5res<-QuestionsDT[BestAnswersDT,on=.(Id=ParentId)]
+  dt_5res<-dt_5res[PostsDT,on=.(AcceptedAnswerId=Id),nomatch=0]
+  dt_5res<-dt_5res[,.(Id,Title,MaxScore,i.Score)]
+  dt_5res<-dt_5res[,Difference:=MaxScore-i.Score]
+  dt_5res<-setnames(dt_5res,c('i.Score'),c('AcceptedScore'))
+  dt_5res<-dt_5res[order(-Difference)]
+  dt_5res <- dt_5res[1:10,]
+}
+df_table_5kon<-df_table_5(PostsDT)
+
+## @knitr dplyr5
+df_dplyr_5<-function(Posts){
+  Best_dplyr=Posts %>%
+    filter(PostTypeId==2) %>%
+    group_by(ParentId) %>%
+    summarise(MaxScore=max(Score)) 
+  Best_dplyr2=Posts %>%
+    select(Id,ParentId,Score)
+  Best_dplyr<-left_join(Best_dplyr,Best_dplyr2,c('MaxScore'='Score','ParentId'))
+  Questions_dplyr=Posts %>%
+    filter(PostTypeId==1)%>%
+    select(Id,Title,AcceptedAnswerId)
+  Best_dplyr<-left_join(Questions_dplyr,Best_dplyr,c('Id'='ParentId'))
+  dplyr_res5<-left_join(Best_dplyr,Posts,c('AcceptedAnswerId'='Id'))%>%
+    select(Id,Title.x,MaxScore,Score)%>%
+    rename(Title=Title.x)%>%
+    rename(AcceptedScore=Score)%>%
+    mutate(Difference=MaxScore-AcceptedScore)%>%
+    arrange(desc(Difference))%>%
+    slice(1:10)
+}
+df_dplyr_5kon<-df_dplyr_5(Posts)
+  
+## @knitr base5
+df_base_5<-function(Posts){
+  posts5<-Posts[Posts$PostTypeId==2,]
+  posts5<-Posts[c("Id", "ParentId", "Score")]
+  BestAnswers<-aggregate(Score~ParentId,posts5,max)
+  BestAnswers<-merge(BestAnswers,posts5)
+  BestAnswers <- BestAnswers[c("Id", "ParentId", "Score")]
+  names(BestAnswers)[names(BestAnswers)=='Score']<-'MaxScore'
+  questions<-Posts[Posts$PostTypeId==1,]
+  df_5<-merge(questions,BestAnswers,all=FALSE,by.x='Id',by.y='ParentId')
+  df_5<-merge(df_5,Posts,all=FALSE,by.x='AcceptedAnswerId',by.y='Id')
+  df_5<-df_5[c('Id','Title.x','MaxScore','Score.y')]
+  names(df_5)[names(df_5)=='Title.x']<-'Title'
+  names(df_5)[names(df_5)=='Score.y']<-'AcceptedScore'
+  df_5<-transform(df_5,Difference=MaxScore-AcceptedScore)
+  ind5<-order(df_5$Difference,decreasing=TRUE)
+  df_5<-df_5[ind5[1:10],]
+  row.names(df_5)<-NULL
+  df_5
+}
+df_base_5kon<-df_base_5(Posts)
+
+microbenchmark::microbenchmark(
+  sqldf = df_sql_5(Posts),
+  base = df_base_5(Posts),
+  dplyr = df_dplyr_5(Posts),
+  data.table = df_table_5(PostsDT)
+)
+
+dplyr::all_equal(df_sql_5kon,df_dplyr_5kon)
+dplyr::all_equal(df_sql_5kon,df_table_5kon)
+dplyr::all_equal(df_sql_5kon,df_base_5kon)
