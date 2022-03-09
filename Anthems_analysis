@@ -1,0 +1,394 @@
+library(tidytext)
+library(gutenbergr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+library(Hmisc)
+Anthems<-read.csv("C:\\Users\\Merli\\Documents\\Laboratorium\\anthems.csv")
+Sentiments<-sentiments
+Anthems=Anthems%>%
+  select(Country,Continent,Anthem)%>%
+  unnest_tokens(word,Anthem)
+Number=Anthems%>%
+  group_by(Country,Continent)%>%
+  count(Country)
+Anthems_res<-inner_join(Sentiments,Anthems,by='word')
+Anthems_res=Anthems_res%>%
+  group_by(Country)%>%
+  count(sentiment)
+Anthems_res<-inner_join(Anthems_res,Anthems,by='Country')
+Anthems_res=Anthems_res%>%
+  select(Country,Continent,sentiment,n)
+Anthems_res<-unique(Anthems_res)
+Anthems_summary<-right_join(Anthems_res,Number,by='Country')
+Anthems_summary$percent<-100*Anthems_summary$n.x/Anthems_summary$n.y
+Anthems_summary=Anthems_summary%>%
+  select(Country,Continent.y,sentiment,n.x,n.y,percent)%>%
+  rename(Sent_Number=n.x,Word_count=n.y,Continent=Continent.y)
+Anthems_Count=Anthems%>%
+  anti_join(stop_words)
+Anthems_Count %>%
+  count(word, sort = TRUE) %>%
+  filter(n > 50) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word)) +
+  geom_col() +
+  labs(y = NULL)
+Anthems_2<-inner_join(Anthems_Count,Sentiments,by='word')
+Anthems_2<-unique(Anthems_2)
+Anthems_Count_2=Anthems_2%>%
+  anti_join(stop_words)
+Anthems_Count_2 %>%
+  count(word, sort = TRUE) %>%
+  filter(n > 20) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word)) +
+  geom_col() +
+  labs(y = NULL)
+
+
+##Africa
+Anthems_Africa<-Anthems_res[Anthems_res$Continent=='Africa',]
+Anthems_Africa_neutral<-Number[Number$Continent=='Africa',]
+Anthems_Africa_posistive<-Anthems_Africa[Anthems_Africa$sentiment=='positive',]
+Anthems_Africa_negative<-Anthems_Africa[Anthems_Africa$sentiment=='negative',]
+Africa_summary<-right_join(Anthems_Africa_negative,Anthems_Africa_posistive,by='Country')
+Africa_summary=Africa_summary%>%
+  select(Country,n.x,n.y)
+Africa_summary[is.na(Africa_summary)] <- 0
+Africa_positive=Africa_summary %>%
+  select(Country,n.y)
+Africa_negative=Africa_summary %>%
+  select(Country,n.x)
+Anthems_summary_Africa<-Anthems_summary[Anthems_summary$Continent=='Africa',]
+Anthems_summary_Africa<-right_join(Africa_summary,Anthems_summary_Africa,by='Country')
+Percent_Africa_positive<-Anthems_summary_Africa[Anthems_summary_Africa$sentiment=='positive',]
+Percent_Africa_negative<-Anthems_summary_Africa[Anthems_summary_Africa$sentiment=='negative',]
+
+empty_africa<-matrix(c(rep.int(NA,length(Percent_Africa_negative))),nrow=15,ncol=length(Percent_Africa_negative))  
+colnames(empty_africa) = colnames(Percent_Africa_negative)  
+empty_africa<-as.data.frame(empty_africa)
+Percent_Africa_negative<-rbind(Percent_Africa_negative, empty_africa)
+Percent_Africa_negative<-as.data.frame(Percent_Africa_negative)
+Percent_Africa_negative[is.na(Percent_Africa_negative)] <- 0
+
+qplot(Percent_Africa_positive$percent,
+      geom="histogram",
+      binwidth = 0.5,  
+      main = "Percentage of positive words in african national anthems", 
+      xlab = "Percent",  
+      fill=I("pink"), 
+      col=I("black"))
+qplot(Percent_Africa_negative$percent,
+      geom="histogram",
+      binwidth = 0.25,  
+      main = "Percentage of negative words in african national anthems", 
+      xlab = "Percent",  
+      fill=I("grey"), 
+      col=I("black"))
+qplot(Africa_positive$n.y,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of positive words in african national anthems", 
+      xlab = "Number of words",  
+      fill=I("red"), 
+      col=I("black"))
+qplot(Africa_negative$n.x,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of negative words in african national anthems", 
+      xlab = "Number of words",  
+      fill=I("blue"), 
+      col=I("black"))
+Africa_negative_mean=mean(Africa_negative$n.x)
+Africa_positive_mean=mean(Africa_positive$n.y)
+Percent_Africa_negative_mean=sum(Percent_Africa_negative$percent)/56
+Percent_Africa_positive_mean=sum(Percent_Africa_positive$percent)/56
+
+
+##Europe
+Anthems_Europe<-Anthems_res[Anthems_res$Continent=='Europe',]
+Anthems_Europe_neutral<-Number[Number$Continent=='Europe',]
+Anthems_Europe_posistive<-Anthems_Europe[Anthems_Europe$sentiment=='positive',]
+Anthems_Europe_negative<-Anthems_Europe[Anthems_Europe$sentiment=='negative',]
+Europe_summary<-right_join(Anthems_Europe_negative,Anthems_Europe_posistive,by='Country')
+Europe_summary=Europe_summary%>%
+  select(Country,n.x,n.y)
+Europe_summary[is.na(Europe_summary)] <- 0
+Europe_positive=Europe_summary %>%
+  select(Country,n.y)
+Europe_negative=Europe_summary %>%
+  select(Country,n.x)
+Anthems_Europe_neutral$n<-Anthems_Europe_neutral$n-(Europe_summary$n.x+Europe_summary$n.y)
+Anthems_summary_Europe<-Anthems_summary[Anthems_summary$Continent=='Europe',]
+Percent_Europe_positive<-Anthems_summary_Europe[Anthems_summary_Europe$sentiment=='positive',]
+Percent_Europe_negative<-Anthems_summary_Europe[Anthems_summary_Europe$sentiment=='negative',]
+
+empty_Europe<-matrix(c(rep.int(NA,length(Percent_Europe_negative))),nrow=12,ncol=length(Percent_Europe_negative))  
+colnames(empty_Europe) = colnames(Percent_Europe_negative)  
+empty_Europe<-as.data.frame(empty_Europe)
+Percent_Europe_negative<-rbind(Percent_Europe_negative, empty_Europe)
+Percent_Europe_negative<-as.data.frame(Percent_Europe_negative)
+Percent_Europe_negative[is.na(Percent_Europe_negative)] <- 0
+
+qplot(Percent_Europe_positive$percent,
+      geom="histogram",
+      binwidth = 0.5,  
+      main = "Percentage of positive words in europian national anthems", 
+      xlab = "Percent",  
+      fill=I("pink"), 
+      col=I("black"))
+qplot(Percent_Europe_negative$percent,
+      geom="histogram",
+      binwidth = 0.25,  
+      main = "Percentage of negative words in europian national anthems", 
+      xlab = "Percent",  
+      fill=I("grey"), 
+      col=I("black"))
+qplot(Europe_positive$n.y,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of positive words in european national anthems", 
+      xlab = "Number of words",  
+      fill=I("red"), 
+      col=I("black"))
+qplot(Europe_negative$n.x,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of negative words in european national anthems", 
+      xlab = "Number of words",  
+      fill=I("blue"), 
+      col=I("black"))
+Europe_negative_mean=mean(Europe_negative$n.x)
+Europe_positive_mean=mean(Europe_positive$n.y)
+Percent_Europe_negative_mean=sum(Percent_Europe_negative$percent)/44
+Percent_Europe_positive_mean=sum(Percent_Europe_positive$percent)/44
+
+
+##Asia
+Anthems_Asia<-Anthems_res[Anthems_res$Continent=='Asia',]
+Anthems_Asia_neutral<-Number[Number$Continent=='Asia',]
+Anthems_Asia_posistive<-Anthems_Asia[Anthems_Asia$sentiment=='positive',]
+Anthems_Asia_negative<-Anthems_Asia[Anthems_Asia$sentiment=='negative',]
+Asia_summary<-right_join(Anthems_Asia_negative,Anthems_Asia_posistive,by='Country')
+Asia_summary=Asia_summary%>%
+  select(Country,n.x,n.y)
+Asia_summary[is.na(Asia_summary)] <- 0
+Asia_positive=Asia_summary %>%
+  select(Country,n.y)
+Asia_negative=Asia_summary %>%
+  select(Country,n.x)
+Anthems_Asia_neutral$n<-Anthems_Asia_neutral$n-(Asia_summary$n.x+Asia_summary$n.y)
+Anthems_summary_Asia<-Anthems_summary[Anthems_summary$Continent=='Asia',]
+Percent_Asia_positive<-Anthems_summary_Asia[Anthems_summary_Asia$sentiment=='positive',]
+Percent_Asia_negative<-Anthems_summary_Asia[Anthems_summary_Asia$sentiment=='negative',]##+22
+
+empty_Asia<-matrix(c(rep.int(NA,length(Percent_Asia_negative))),nrow=22,ncol=length(Percent_Asia_negative))  
+colnames(empty_Asia) = colnames(Percent_Asia_negative)  
+empty_Asia<-as.data.frame(empty_Asia)
+Percent_Asia_negative<-rbind(Percent_Asia_negative, empty_Asia)
+Percent_Asia_negative<-as.data.frame(Percent_Asia_negative)
+Percent_Asia_negative[is.na(Percent_Asia_negative)] <- 0
+
+qplot(Percent_Asia_positive$percent,
+      geom="histogram",
+      binwidth = 0.5,  
+      main = "Percentage of positive words in asian national anthems", 
+      xlab = "Percent",  
+      fill=I("pink"), 
+      col=I("black"))
+qplot(Percent_Asia_negative$percent,
+      geom="histogram",
+      binwidth = 0.25,  
+      main = "Percentage of negative words in asian national anthems", 
+      xlab = "Percent",  
+      fill=I("grey"), 
+      col=I("black"))
+qplot(Asia_positive$n.y,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of positive words in asian national anthems", 
+      xlab = "Number of words",  
+      fill=I("red"), 
+      col=I("black"))
+qplot(Asia_negative$n.x,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of negative words in asian national anthems", 
+      xlab = "Number of words",  
+      fill=I("blue"), 
+      col=I("black"))
+Asia_negative_mean=mean(Asia_negative$n.x)
+Asia_positive_mean=mean(Asia_positive$n.y)
+Percent_Asia_negative_mean=sum(Percent_Asia_negative$percent)/44
+Percent_Asia_positive_mean=sum(Percent_Asia_positive$percent)/44
+
+
+##North_America
+Anthems_North_America<-Anthems_res[Anthems_res$Continent=='North_America',]
+Anthems_North_America_neutral<-Number[Number$Continent=='North_America',]
+Anthems_North_America_posistive<-Anthems_North_America[Anthems_North_America$sentiment=='positive',]
+Anthems_North_America_negative<-Anthems_North_America[Anthems_North_America$sentiment=='negative',]
+North_America_summary<-right_join(Anthems_North_America_negative,Anthems_North_America_posistive,by='Country')
+North_America_summary=North_America_summary%>%
+  select(Country,n.x,n.y)
+North_America_summary[is.na(North_America_summary)] <- 0
+North_America_positive=North_America_summary %>%
+  select(Country,n.y)
+North_America_negative=North_America_summary %>%
+  select(Country,n.x)
+Anthems_North_America_neutral$n<-Anthems_North_America_neutral$n-(North_America_summary$n.x+North_America_summary$n.y)
+Anthems_summary_North<-Anthems_summary[Anthems_summary$Continent=='North_America',]
+Percent_North_positive<-Anthems_summary_North[Anthems_summary_North$sentiment=='positive',]
+Percent_North_negative<-Anthems_summary_North[Anthems_summary_North$sentiment=='negative',]##+5
+
+empty_north<-matrix(c(rep.int(NA,length(Percent_North_negative))),nrow=5,ncol=length(Percent_North_negative))  
+colnames(empty_north) = colnames(Percent_North_negative)  
+empty_north<-as.data.frame(empty_north)
+Percent_North_negative<-rbind(Percent_North_negative, empty_north)
+Percent_North_negative<-as.data.frame(Percent_North_negative)
+Percent_North_negative[is.na(Percent_North_negative)] <- 0
+
+qplot(Percent_North_positive$percent,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Percentage of positive words in north american national anthems", 
+      xlab = "Percent",  
+      fill=I("pink"), 
+      col=I("black"))
+qplot(Percent_North_negative$percent,
+      geom="histogram",
+      binwidth = 0.25,  
+      main = "Percentage of negative words in north american national anthems", 
+      xlab = "Percent",  
+      fill=I("grey"), 
+      col=I("black"))
+qplot(North_America_positive$n.y,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of positive words in north american national anthems", 
+      xlab = "Number of words",  
+      fill=I("red"), 
+      col=I("black"))
+qplot(North_America_negative$n.x,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of negative words in north american national anthems", 
+      xlab = "Number of words",  
+      fill=I("blue"), 
+      col=I("black"))
+North_America_negative_mean=mean(North_America_negative$n.x)
+North_America_positive_mean=mean(North_America_positive$n.y)
+Percent_North_America_negative_mean=sum(Percent_North_negative$percent)/24
+Percent_North_America_positive_mean=sum(Percent_North_positive$percent)/24
+
+
+##South_America
+Anthems_South_America<-Anthems_res[Anthems_res$Continent=='South_America',]
+Anthems_South_America_neutral<-Number[Number$Continent=='South_America',]
+Anthems_South_America_posistive<-Anthems_South_America[Anthems_South_America$sentiment=='positive',]
+Anthems_South_America_negative<-Anthems_South_America[Anthems_South_America$sentiment=='negative',]
+South_America_summary<-right_join(Anthems_South_America_negative,Anthems_South_America_posistive,by='Country')
+South_America_summary=South_America_summary%>%
+  select(Country,n.x,n.y)
+South_America_summary[is.na(South_America_summary)] <- 0
+South_America_positive=South_America_summary %>%
+  select(Country,n.y)
+South_America_negative=South_America_summary %>%
+  select(Country,n.x)
+Anthems_South_America_neutral$n<-Anthems_South_America_neutral$n-(South_America_summary$n.x+South_America_summary$n.y)
+Anthems_summary_South<-Anthems_summary[Anthems_summary$Continent=='South_America',]
+Percent_South_positive<-Anthems_summary_South[Anthems_summary_South$sentiment=='positive',]
+Percent_South_negative<-Anthems_summary_South[Anthems_summary_South$sentiment=='negative',]
+qplot(Percent_South_positive$percent,
+      geom="histogram",
+      binwidth = 0.5,  
+      main = "Percentage of positive words in south american national anthems", 
+      xlab = "Percent",  
+      fill=I("pink"), 
+      col=I("black"))
+qplot(Percent_South_negative$percent,
+      geom="histogram",
+      binwidth = 0.25,  
+      main = "Percentage of negative words in south american national anthems", 
+      xlab = "Percent",  
+      fill=I("grey"), 
+      col=I("black"))
+qplot(South_America_positive$n.y,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of positive words in south american national anthems", 
+      xlab = "Number of words",  
+      fill=I("red"), 
+      col=I("black"))
+qplot(South_America_negative$n.x,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of negative words in south american national anthems", 
+      xlab = "Number of words",  
+      fill=I("blue"), 
+      col=I("black"))
+South_America_negative_mean=mean(South_America_negative$n.x)
+South_America_positive_mean=mean(South_America_positive$n.y)
+Percent_South_America_negative_mean=sum(Percent_South_negative$percent)/12
+Percent_South_America_positive_mean=sum(Percent_South_positive$percent)/12
+
+
+##Oceania
+Anthems_Oceania<-Anthems_res[Anthems_res$Continent=='Oceania',]
+Anthems_Oceania_neutral<-Number[Number$Continent=='Oceania',]
+Anthems_Oceania_posistive<-Anthems_Oceania[Anthems_Oceania$sentiment=='positive',]
+Anthems_Oceania_negative<-Anthems_Oceania[Anthems_Oceania$sentiment=='negative',]
+Oceania_summary<-right_join(Anthems_Oceania_negative,Anthems_Oceania_posistive,by='Country')
+Oceania_summary=Oceania_summary%>%
+  select(Country,n.x,n.y)
+Oceania_summary[is.na(Oceania_summary)] <- 0
+Oceania_positive=Oceania_summary %>%
+  select(Country,n.y)
+Oceania_negative=Oceania_summary %>%
+  select(Country,n.x)
+Anthems_Oceania_neutral$n<-Anthems_Oceania_neutral$n-(Oceania_summary$n.x+Oceania_summary$n.y)
+Anthems_summary_Oceania<-Anthems_summary[Anthems_summary$Continent=='Oceania',]
+Percent_Oceania_positive<-Anthems_summary_Oceania[Anthems_summary_Oceania$sentiment=='positive',]
+Percent_Oceania_negative<-Anthems_summary_Oceania[Anthems_summary_Oceania$sentiment=='negative',]
+
+empty_Oceania<-matrix(c(rep.int(NA,length(Percent_Oceania_negative))),nrow=6,ncol=length(Percent_Oceania_negative))  
+colnames(empty_Oceania) = colnames(Percent_Oceania_negative)  
+empty_Oceania<-as.data.frame(empty_Oceania)
+Percent_Oceania_negative<-rbind(Percent_Oceania_negative, empty_Oceania)
+Percent_Oceania_negative<-as.data.frame(Percent_Oceania_negative)
+Percent_Oceania_negative[is.na(Percent_Oceania_negative)] <- 0
+
+qplot(Percent_Oceania_positive$percent,
+      geom="histogram",
+      binwidth = 0.5,  
+      main = "Percentage of positive words in oceanian national anthems", 
+      xlab = "Percent",  
+      fill=I("pink"), 
+      col=I("black"))
+qplot(Percent_Oceania_negative$percent,
+      geom="histogram",
+      binwidth = 0.25,  
+      main = "Percentage of negative words in oceanian national anthems", 
+      xlab = "Percent",  
+      fill=I("grey"), 
+      col=I("black"))
+qplot(Oceania_positive$n.y,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of positive words in oceanian national anthems", 
+      xlab = "Number of words",  
+      fill=I("red"), 
+      col=I("black"))
+qplot(Oceania_negative$n.x,
+      geom="histogram",
+      binwidth = 1,  
+      main = "Number of negative words in oceanian national anthems", 
+      xlab = "Number of words",  
+      fill=I("blue"), 
+      col=I("black"))
+Oceania_positive_mean=mean(Oceania_positive$n.y)
+Oceania_negative_mean=mean(Oceania_negative$n.x)
+Percent_Oceania_negative_mean=sum(Percent_Oceania_negative$percent)/10
+Percent_Oceania_positive_mean=sum(Percent_Oceania_positive$percent)/10
